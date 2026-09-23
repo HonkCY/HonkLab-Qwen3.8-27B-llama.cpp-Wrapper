@@ -4,7 +4,7 @@
   "slot_dir": "/dev/shm/pd_slots/",
   "upstream_port": 8096,
   "listen_port": 8099,
-  "prefill_threshold": 22000,
+  "prefill_threshold": 18000,
   "env": { "CUDA_SCALE_LAUNCH_QUEUES": "4x" },
   "common_args": [
     "--alias", "qwen-agent",
@@ -12,19 +12,17 @@
     "-ngl", "99",
     "-fa", "on",
     "-ctk", "q8_0", "-ctv", "q8_0",
-    "-c", "229376",
+    "-c", "262144",
     "-np", "1",
     "--kv-unified",
     "--fit", "off",
-    "--spec-type", "draft-mtp",
-    "--spec-draft-n-max", "3",
     "--timeout", "3600",
     "--jinja",
     "--reasoning-effort", "medium",
     "--reasoning-budget", "16384"
   ],
   "modes": {
-    "prefill": ["-sm", "layer", "-ts", "1,0.8"],
-    "decode":  ["-sm", "tensor", "-ts", "1,1"]
+    "prefill": ["-sm", "layer",  "-ts", "1,0.9", "--spec-type", "none"],
+    "decode":  ["-sm", "tensor", "-ts", "1,1",   "--spec-type", "draft-mtp", "--spec-draft-n-max", "3"]
   }
 }
