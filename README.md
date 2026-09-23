@@ -2,8 +2,38 @@
 
 Prefill/decode split for a single `llama-server` on two mismatched GPUs.
 
-On a box with an RTX 5060 Ti (16 GB, PCIe 5.0 x8) and an RTX 4060 Ti (16 GB, PCIe 4.0 x1,
-no P2P), the two llama.cpp split modes are good at opposite things:
+## The machine this exists for
+
+| | |
+|---|---|
+| CPU | AMD Ryzen 5 9600X (6C/12T) |
+| RAM | 64 GB DDR5 (62.3 GB usable), `/dev/shm` 30 GB |
+| GPU A | **RTX 5060 Ti 16 GB** — CPU slot, PCIe 5.0 x8 (`LnkCap 32GT/s Width x8`), 448 GB/s |
+| GPU B | **RTX 4060 Ti 16 GB** — chipset slot, **link downgraded to x1** (`LnkCap 16GT/s x8`, `LnkSta 2.5GT/s (downgraded), Width x1 (downgraded)`), 288 GB/s |
+| Interconnect | `PHB` — both cards reach each other through the CPU host bridge. No NVLink, and GeForce P2P is unsupported (`nvidia-smi topo -p2p r` → `NS`), so **every cross-GPU byte goes through host RAM** |
+| Display | driven by the CPU's iGPU, so neither card loses VRAM to the desktop |
+| Software | driver 595.91.07 / CUDA 13.2, llama.cpp build 11045 (`2b1847030`), `CUDA_SCALE_LAUNCH_QUEUES=4x` |
+| Model | Qwen3.8-27B Q4_K_M with an embedded MTP layer, 262144 native context, q8_0/q8_0 KV |
+
+Three constraints drive everything here:
+
+1. **32 GB total VRAM, in two 16 GB pieces.** One Q4 copy of the model plus a 262K q8_0 KV
+   cache fills both cards (~14.8 GB each). There is no room for a second model copy, and no
+   single card can hold the model alone.
+2. **The second card is on a PCIe x1 link.** Anything that streams data to it — tensor-
+   parallel all-reduce, CPU-expert offload — is throttled to ~1.7 GB/s round trip.
+3. **No P2P.** Cross-GPU traffic is copied GPU → host RAM → GPU.
+
+Constraint 2 has a non-obvious consequence: llama.cpp enumerates these cards as
+`CUDA0 = 4060 Ti` and `CUDA1 = 5060 Ti`, the reverse of nvidia-smi. Leaving the x1 card
+first in the pipeline puts operation-offload traffic across the slow link; passing
+`-dev CUDA1,CUDA0` to put the fast card first was worth **6.3x** on a prefill-heavy
+workload during earlier benchmarking. Every profile here passes it, and `-ts` values follow
+that order, so `-ts 1,0.9` means 5060 Ti = 1, 4060 Ti = 0.9.
+
+## The problem
+
+Given that hardware, the two llama.cpp split modes are good at opposite things:
 
 | Qwen3.8-27B Q4_K_M, q8_0 KV, 262144 ctx | prefill | decode |
 |---|---|---|
