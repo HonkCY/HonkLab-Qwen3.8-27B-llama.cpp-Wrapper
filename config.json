@@ -3,7 +3,7 @@
   "model": "~/models/qwen3.8-27b/Qwen3.8-27B-Q4_K_M.gguf",
   "slot_dir": "/dev/shm/pd_slots/",
   "upstream_port": 8096,
-  "listen_port": 8099,
+  "listen_port": 8080,
   "prefill_threshold": 18000,
   "env": { "CUDA_SCALE_LAUNCH_QUEUES": "4x" },
   "common_args": [
