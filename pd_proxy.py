@@ -92,12 +92,18 @@ class Engine:
                 time.sleep(1)
         raise RuntimeError(f'{mode} server did not become healthy')
 
+    # a llama-server in the middle of a long prefill can take minutes to answer SIGTERM,
+    # which used to make `systemctl stop` hang and strand the client. Give it a short
+    # grace period and then kill it: whatever it was computing is being discarded anyway.
+    STOP_GRACE_S = 15
+
     def stop(self):
         if self.proc and self.proc.poll() is None:
             self.proc.send_signal(signal.SIGTERM)
             try:
-                self.proc.wait(180)
+                self.proc.wait(self.STOP_GRACE_S)
             except subprocess.TimeoutExpired:
+                log(f'llama-server did not exit in {self.STOP_GRACE_S}s, killing it')
                 self.proc.kill()
                 self.proc.wait(30)
         self.proc = None
@@ -189,25 +195,68 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a):
         pass
 
-    def _proxy(self, body_bytes):
+    def _chunk(self, data):
+        self.wfile.write(b'%x\r\n' % len(data) + data + b'\r\n')
+        self.wfile.flush()
+
+    def _prepare_streaming(self, engine, body, raw):
+        """Run the prefill phase while holding the client's stream open.
+
+        A 262K prefill plus two mode switches is ~5 minutes during which the proxy has
+        nothing to forward. Without this the client just sees a dead socket and its own
+        timeout eventually fires, so send the SSE headers up front and drip comment frames
+        (': ...' lines, which every SSE parser ignores) until the phase is done.
+        """
+        done = threading.Event()
+        failure = []
+
+        def work():
+            try:
+                engine.prepare(body, self.server.threshold)
+            except Exception as e:                       # noqa: BLE001 - reported, not raised
+                failure.append(e)
+            finally:
+                done.set()
+
+        threading.Thread(target=work, daemon=True).start()
+        sent_headers = False
+        while not done.wait(10):
+            if not sent_headers:
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/event-stream')
+                self.send_header('Cache-Control', 'no-cache')
+                self.send_header('Transfer-Encoding', 'chunked')
+                self.end_headers()
+                sent_headers = True
+            try:
+                self._chunk(b': pd-proxy prefilling\n\n')
+            except (BrokenPipeError, ConnectionResetError):
+                log('client disconnected during the prefill phase; finishing it anyway')
+                done.wait()          # let the phase finish so the work is not wasted
+                return
+        if failure:
+            log('prepare failed, forwarding anyway:', failure[0])
+        self._proxy(raw, sent_headers)
+
+    def _proxy(self, body_bytes, sent_headers=False):
         engine = self.server.engine
         c = http.client.HTTPConnection('127.0.0.1', engine.port, timeout=3600)
         try:
             c.request(self.command, self.path, body_bytes,
                       {'Content-Type': 'application/json'})
             r = c.getresponse()
-            self.send_response(r.status)
-            for k, v in r.getheaders():
-                if k.lower() not in ('transfer-encoding', 'connection', 'content-length'):
-                    self.send_header(k, v)
-            self.send_header('Transfer-Encoding', 'chunked')
-            self.end_headers()
+            if not sent_headers:
+                self.send_response(r.status)
+                for k, v in r.getheaders():
+                    if k.lower() not in ('transfer-encoding', 'connection', 'content-length'):
+                        self.send_header(k, v)
+                self.send_header('Transfer-Encoding', 'chunked')
+                self.end_headers()
             while True:
                 chunk = r.read(8192)
                 if not chunk:
                     break
-                self.wfile.write(b'%x\r\n' % len(chunk) + chunk + b'\r\n')
-                self.wfile.flush()
+                self._chunk(chunk)
             self.wfile.write(b'0\r\n\r\n')
         except (BrokenPipeError, ConnectionResetError):
             # the client hung up mid-stream; nothing to send it and nothing to log loudly
@@ -221,7 +270,14 @@ class Handler(BaseHTTPRequestHandler):
         engine = self.server.engine
         if self.path.rstrip('/').endswith('chat/completions'):
             try:
-                engine.prepare(json.loads(raw), self.server.threshold)
+                body = json.loads(raw)
+            except ValueError:
+                body = {}
+            if body.get('stream'):
+                self._prepare_streaming(engine, body, raw)
+                return
+            try:
+                engine.prepare(body, self.server.threshold)
             except Exception as e:
                 log('prepare failed, forwarding anyway:', e)
         else:
