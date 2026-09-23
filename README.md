@@ -110,6 +110,21 @@ is what lets the prefill side keep pipeline parallelism with room to spare:
 `prompt_n = 1`. The draft context is not part of the state file either way (upstream
 #28619), so nothing is lost.
 
+**4. The decode profile has to use MTP, not DFlash2.** DFlash2 (`--spec-type draft-dflash`,
+a separate 1.06 GB draft model) is a reasonable alternative on paper — at 128K in layer mode
+it measured 21.63 t/s against MTP n=3's 21.20 — but it **cannot run in tensor mode at all**:
+
+```
+ggml/src/ggml-backend-meta.cpp:543: GGML_ASSERT(src_ss[0].axis != GGML_BACKEND_SPLIT_AXIS_0) failed
+```
+
+`GGML_BACKEND_SPLIT_AXIS_0` is the axis `-sm tensor` splits along. The assert fires even at
+131072 with 3.6/4.2 GB of VRAM free, so this is an architectural incompatibility, not a
+memory limit — the same class of restriction as `--override-tensor` under `-sm tensor`.
+DFlash2 loads fine under `-sm layer`, which is the phase where speculation does not help.
+Restoring the same 262K state into a tensor+MTP decode server reproduced tg 18.86 t/s with
+1525/1617 MiB free, so VRAM was never the constraint.
+
 ### The gotcha that makes it look broken
 
 llama-server re-processes the entire prompt after a restore **if the incoming prompt is a
