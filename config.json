@@ -1,0 +1,30 @@
+{
+  "bin": "~/src/llama.cpp/build/bin/llama-server",
+  "model": "~/models/qwen3.8-27b/Qwen3.8-27B-Q4_K_M.gguf",
+  "slot_dir": "/dev/shm/pd_slots/",
+  "upstream_port": 8096,
+  "listen_port": 8099,
+  "prefill_threshold": 22000,
+  "env": { "CUDA_SCALE_LAUNCH_QUEUES": "4x" },
+  "common_args": [
+    "--alias", "qwen-agent",
+    "-dev", "CUDA1,CUDA0",
+    "-ngl", "99",
+    "-fa", "on",
+    "-ctk", "q8_0", "-ctv", "q8_0",
+    "-c", "229376",
+    "-np", "1",
+    "--kv-unified",
+    "--fit", "off",
+    "--spec-type", "draft-mtp",
+    "--spec-draft-n-max", "3",
+    "--timeout", "3600",
+    "--jinja",
+    "--reasoning-effort", "medium",
+    "--reasoning-budget", "16384"
+  ],
+  "modes": {
+    "prefill": ["-sm", "layer", "-ts", "1,0.8"],
+    "decode":  ["-sm", "tensor", "-ts", "1,1"]
+  }
+}

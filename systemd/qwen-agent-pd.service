@@ -1,0 +1,18 @@
+# Example unit — copy to ~/.config/systemd/user/ and `systemctl --user daemon-reload`.
+# Runs pd_proxy, which owns the llama-server child process itself.
+[Unit]
+Description=Qwen agent server with prefill/decode split (pd_proxy)
+After=default.target
+
+[Service]
+Type=simple
+# the model lives on a LUKS disk unlocked at desktop login
+ExecStartPre=/bin/bash -c 'for i in $(seq 1 120); do [ -f %h/models/qwen3.8-27b/Qwen3.8-27B-Q4_K_M.gguf ] && exit 0; sleep 5; done; exit 1'
+ExecStart=/usr/bin/python3 %h/src/pd-proxy/pd_proxy.py --config %h/src/pd-proxy/config.json
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=240
+
+[Install]
+WantedBy=default.target
