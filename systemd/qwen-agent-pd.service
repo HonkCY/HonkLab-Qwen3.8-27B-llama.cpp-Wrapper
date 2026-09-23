@@ -8,7 +8,7 @@ After=default.target
 Type=simple
 # the model lives on a LUKS disk unlocked at desktop login
 ExecStartPre=/bin/bash -c 'for i in $(seq 1 120); do [ -f %h/models/qwen3.8-27b/Qwen3.8-27B-Q4_K_M.gguf ] && exit 0; sleep 5; done; exit 1'
-ExecStart=/usr/bin/python3 %h/src/pd-proxy/pd_proxy.py --config %h/src/pd-proxy/config.json
+ExecStart=/usr/bin/python3 %h/src/pd-proxy/pd_proxy.py --config %h/src/pd-proxy/local.json
 Restart=on-failure
 RestartSec=5
 KillSignal=SIGTERM

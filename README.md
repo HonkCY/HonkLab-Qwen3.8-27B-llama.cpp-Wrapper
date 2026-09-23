@@ -179,6 +179,9 @@ python3 pd_proxy.py --threshold 8000 --port 8080  # override
 and the two mode profiles (`modes.prefill`, `modes.decode`). pd_proxy starts and stops the
 llama-server itself — do not run one separately on `upstream_port`.
 
+For a real deployment, copy it to `local.json` (gitignored), point that at your own model
+file, and run `--config local.json`.
+
 Point an OpenAI-compatible client at `http://127.0.0.1:<listen_port>/v1`.
 `/v1/chat/completions` goes through the policy above; everything else is proxied straight
 through to whichever server is up.

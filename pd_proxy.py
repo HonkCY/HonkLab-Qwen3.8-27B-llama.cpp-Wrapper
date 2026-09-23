@@ -209,6 +209,9 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(b'%x\r\n' % len(chunk) + chunk + b'\r\n')
                 self.wfile.flush()
             self.wfile.write(b'0\r\n\r\n')
+        except (BrokenPipeError, ConnectionResetError):
+            # the client hung up mid-stream; nothing to send it and nothing to log loudly
+            log(f'client disconnected during {self.path}')
         finally:
             c.close()
 
