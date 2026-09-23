@@ -121,6 +121,12 @@ class Engine:
             if carry:
                 r = self.up(f'/slots/0?action=restore', {'filename': self.STATE})
                 log(f'restored {r["n_restored"]} tok in {r["timings"]["restore_ms"]:.0f} ms')
+                # the KV is back in VRAM; the file is ~35 KiB/token of tmpfs (8.9 GiB at 262K)
+                # and would otherwise sit in RAM until the next switch overwrites it
+                try:
+                    os.unlink(os.path.join(self.slot_dir, self.STATE))
+                except OSError:
+                    pass
             log(f'switch to {mode} took {time.time() - t0:.0f}s')
 
     def ensure(self, mode):
