@@ -19,11 +19,24 @@ Qwen3.8-27B Q4_K_M, q8_0/q8_0 KV, MTP n=3 for decode, at the model's full 262144
 
 | | prefill | TTFT (262K prompt) | decode |
 |---|---|---|---|
-| `-sm layer` + MTP n=3 | not measured at 262K | — | not measured at 262K |
+| `-sm layer` + MTP n=3 | **core dumps mid-prefill** at `-ts 1,0.8` and `1,0.82`; `1,0.78` loads but loses pipeline parallelism | — | — |
 | `-sm tensor` + MTP n=3 | 267 t/s | **978 s** | **19.83 t/s** |
 | **pd-proxy** (layer prefill → tensor decode) | **545.6 t/s** | **498 s** | **18.86 t/s** |
 
 **Gain: TTFT drops 49% (978 s → 498 s) while decode keeps 95% of tensor mode's speed.**
+
+At 204800, where layer mode has room to spare (pipeline parallelism on at every ratio tried,
+1.2–3.3 GB free), the picture changes and the proxy loses most of its reason to exist:
+
+| 200K, `-ts 1,0.8`, 203999-token prompt | prefill | TTFT | decode |
+|---|---|---|---|
+| `-sm layer` + MTP n=3 | 531.2 t/s | 384 s | ~16.5–17 t/s\* |
+| `-sm layer`, no speculation | **714.9 t/s** | **285 s** | n/a |
+
+\* One measurement gave 20.18 t/s but with `draft acceptance = 1.00000` (95/95, mean len
+3.97) on a summarise-the-document prompt at temperature 0 — not representative. The range
+here is interpolated from runs with typical acceptance (128K: 21.2 t/s at 0.68; 224K:
+15.3 t/s at 0.70).
 
 Against the layer-mode profile this machine used to run in production, measured at 224K
 where that profile fits comfortably:
