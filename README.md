@@ -4,6 +4,15 @@ Runs one `llama-server` and switches its split mode between prefill and decode, 
 KV cache across the restart. Built for a box whose two GPUs are good at opposite halves of
 inference and cannot both hold a model copy.
 
+> **Status: not deployed.** On the machine it was built for, the owner moved back to plain
+> `-sm layer` because tensor mode keeps both GPUs at 100% at once (108/126 W) and kept
+> triggering fan ramps. With decode in layer mode too, this proxy's only remaining benefit is
+> prefilling without MTP: 285 s versus 384 s at 200K, minus ~30 s of switching — 69 s saved,
+> and only when a context is filled from scratch. Not worth an extra process that takes the
+> server down for 15 s per switch. Kept here as a measured result, and because the KV-across-
+> split-modes mechanism below is reusable.
+
+
 ## What it buys
 
 Qwen3.8-27B Q4_K_M, q8_0/q8_0 KV, MTP n=3 for decode, at the model's full 262144 context:
